@@ -871,18 +871,18 @@ install_with_yum() {
   # Enable CodeReady and EPEL on RHEL 8+
   if [ "$os_major_version" -ge 8 ] && [ "$os_type" = "rhel" ]; then
     # Important Perl packages are now hidden in CodeReady repo
-    run_ok "$install_config_manager --set-enabled codeready-builder-for-rhel-$os_major_version-x86_64-rpms" "Enabling Red Hat CodeReady package repository"
+    # run_ok "$install_config_manager --set-enabled codeready-builder-for-rhel-$os_major_version-x86_64-rpms" "Enabling Red Hat CodeReady package repository"
     # Install EPEL
     download "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$os_major_version.noarch.rpm"
     run_ok "rpm -U --replacepkgs --quiet epel-release-latest-$os_major_version.noarch.rpm" "Installing EPEL $os_major_version release package"
   # Install EPEL on RHEL 7
-  elif [ "$os_major_version" -eq 7 ] && [ "$os_type" = "rhel" ]; then
-    download "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm"
-    run_ok "rpm -U --replacepkgs --quiet epel-release-latest-7.noarch.rpm" "Installing EPEL 7 release package"
+  # elif [ "$os_major_version" -eq 7 ] && [ "$os_type" = "rhel" ]; then
+    # download "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm"
+    # run_ok "rpm -U --replacepkgs --quiet epel-release-latest-7.noarch.rpm" "Installing EPEL 7 release package"
   # Install EPEL on CentOS/Alma/Rocky
-  elif [ "$os_type" = "centos" ] || [ "$os_type" = "rocky" ] || [ "$os_type" = "almalinux" ]; then  
-    run_ok "$install epel-release" "Installing EPEL release package"
-  # Install EPEL on Oracle 7+
+  # elif [ "$os_type" = "centos" ] || [ "$os_type" = "rocky" ] || [ "$os_type" = "almalinux" ]; then  
+    # run_ok "$install epel-release" "Installing EPEL release package"
+  # Install EPEL on Oracle Linux 8
   elif [ "$os_type" = "ol" ]; then
     run_ok "$install oracle-epel-release-el$os_major_version" "Installing EPEL release package"
   fi

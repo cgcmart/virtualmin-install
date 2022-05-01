@@ -18,7 +18,7 @@
 # License and version
 SERIAL=GPL
 KEY=GPL
-VER=7.0.0-RC3
+VER=7.0.0-RC4
 vm_version=7
 upgrade_virtualmin_host=software.virtualmin.com
 
@@ -786,7 +786,7 @@ install_virtualmin_release() {
     # XXX Test to make sure this run_ok syntax works as expected (with single quotes inside double)
     if [ $os_type = "ubuntu" ]; then
       if [ -x "/bin/add-apt-repository" ] || [ -x "/usr/bin/add-apt-repository" ]; then
-        run_ok "add-apt-repository universe" \
+        run_ok "add-apt-repository -y universe" \
           "Enabling universe repositories, if not already available"
       else
         run_ok "sed -ie '/backports/b; s/#*[ ]*deb \\(.*\\) universe$/deb \\1 universe/' /etc/apt/sources.list" \

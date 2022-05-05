@@ -18,7 +18,7 @@
 # License and version
 SERIAL=GPL
 KEY=GPL
-VER=7.0.0-RC4
+VER=7.0.0-RC5
 vm_version=7
 upgrade_virtualmin_host=software.virtualmin.com
 
@@ -123,46 +123,48 @@ while [ "$1" != "" ]; do
   esac
 done
 
-echo "Running ${GREEN}Virtualmin ${vm_version}${NORMAL} pre-installation setup:"
+if [ -z "$setup_only" ]; then
+  echo "Running ${GREEN}Virtualmin ${vm_version}${NORMAL} pre-installation setup:"
 
-# Check if current time
-# is not older than
-# April 2, 2022
-TIMEBASE=1648888888
-TIME=`date +%s`
-if [ "$TIME" -lt "$TIMEBASE" ]; then
-  echo "  Syncing system time .."
-
-  # Try to sync time automatically first
-  if systemctl restart chronyd 1>/dev/null 2>&1; then
-    sleep 15
-  elif systemctl restart systemd-timesyncd 1>/dev/null 2>&1; then
-    sleep 15
-  fi
-
-  # Check again after all
+  # Check if current time
+  # is not older than
+  # April 2, 2022
+  TIMEBASE=1648888888
   TIME=`date +%s`
   if [ "$TIME" -lt "$TIMEBASE" ]; then
-    echo "  .. failed to automatically sync system time; it must be corrected manually to continue"
-    exit
+    echo "  Syncing system time .."
+
+    # Try to sync time automatically first
+    if systemctl restart chronyd 1>/dev/null 2>&1; then
+      sleep 15
+    elif systemctl restart systemd-timesyncd 1>/dev/null 2>&1; then
+      sleep 15
+    fi
+
+    # Check again after all
+    TIME=`date +%s`
+    if [ "$TIME" -lt "$TIMEBASE" ]; then
+      echo "  .. failed to automatically sync system time; it must be corrected manually to continue"
+      exit
+    fi
+    echo "  .. done"
+  fi
+
+  # Update all system packages first
+  echo "  Checking and installing system packages updates, if any .."
+  printf "Running system packages upgrades ..\\n" >>$log
+  if [ -x /usr/bin/dnf ]; then
+    dnf -y update >>$log 2>&1
+  elif [ -x /usr/bin/yum ]; then
+    yum -y update >>$log 2>&1
+  elif [ -x /usr/bin/apt-get ]; then
+    apt-get -y upgrade >>$log 2>&1
   fi
   echo "  .. done"
-fi
 
-# Update all system packages first
-echo "  Checking and installing system packages updates, if any .."
-printf "Running system packages upgrades ..\\n" >>$log
-if [ -x /usr/bin/dnf ]; then
-  dnf -y update >>$log 2>&1
-elif [ -x /usr/bin/yum ]; then
-  yum -y update >>$log 2>&1
-elif [ -x /usr/bin/apt-get ]; then
-  apt-get -y upgrade >>$log 2>&1
+  # Make sure Perl is installed
+  printf "Checking for Perl ..\\n" >>$log
 fi
-echo "  .. done"
-
-# Make sure Perl is installed
-printf "Checking for Perl ..\\n" >>$log
 # loop until we've got a Perl or until we can't try any more
 while true; do
   perl="$(which perl 2>/dev/null)"
@@ -177,11 +179,13 @@ while true; do
       perl=/opt/csw/bin/perl
       break
     elif [ "$perl_attempted" = 1 ]; then
-      printf ".. ${RED}Perl could not be installed. Cannot continue.${NORMAL}\\n"
+      printf "Perl ${RED}could not${NORMAL} be installed. Cannot continue.\\n"
       exit 2
     fi
     # couldn't find Perl, so we need to try to install it
-    echo "  Attempting to install Perl .."
+    if [ -z "$setup_only" ]; then
+      echo "  Attempting to install Perl .."
+    fi
     if [ -x /usr/bin/dnf ]; then
       dnf -y install perl >>$log
     elif [ -x /usr/bin/yum ]; then
@@ -196,8 +200,10 @@ while true; do
     break
   fi
 done
-if [ "$perl_attempted" = 1 ]; then
-  echo "  .. done"
+if [ -z "$setup_only" ]; then
+  if [ "$perl_attempted" = 1 ]; then
+    echo "  .. done"
+  fi
 fi
 printf ".. found Perl at $perl\\n" >>$log
 
@@ -597,7 +603,7 @@ download() {
   # Especially make sure failure gets logged right.
   # awk magic prints the filename, rather than whole URL
   download_file=$(echo "$1" | awk -F/ '{print $NF}')
-  run_ok "$download $1" "Downloading Virtualmin release package"
+  run_ok "$download $1" "$2"
   if [ $? -ne 0 ]; then
     fatal "Failed to download Virtualmin release package. Cannot continue. Check your network connection and DNS settings."
   else
@@ -614,11 +620,11 @@ if [ "$?" != "0" ]; then
   fi
 fi
 
-log_info "Started installation log in $log"
 if [ -n "$setup_only" ]; then
-  log_debug "Phase 1 of 1: Setup"
+  log_info "Started Virtualmin $vm_version software repositories setup"
   printf "${YELLOW}▣${NORMAL} Phase ${YELLOW}1${NORMAL} of ${GREEN}1${NORMAL}: Setup\\n"
 else
+  log_info "Started installation log in $log"
   log_debug "Phase 1 of 3: Setup"
   printf "${YELLOW}▣${CYAN}□□${NORMAL} Phase ${YELLOW}1${NORMAL} of ${GREEN}3${NORMAL}: Setup\\n"
 fi
@@ -710,7 +716,7 @@ install_virtualmin_release() {
     if [ "$os_type" = "ol" ]; then
       os_type_repo='rhel'
     fi
-    download "https://${LOGIN}$upgrade_virtualmin_host/vm/${vm_version}/${repopath}${os_type_repo}/${os_major_version}/${arch}/virtualmin-release-latest.noarch.rpm"
+    download "https://${LOGIN}$upgrade_virtualmin_host/vm/${vm_version}/${repopath}${os_type_repo}/${os_major_version}/${arch}/virtualmin-release-latest.noarch.rpm" "Downloading Virtualmin $vm_version release package"
     run_ok "rpm -U --replacepkgs --quiet virtualmin-release-latest.noarch.rpm" "Installing Virtualmin release package"
     # XXX This weirdly only seems necessary on CentOS 8, but harmless
     # elsewhere.
@@ -767,18 +773,22 @@ install_virtualmin_release() {
     # Remove any existing repo config, in case it's a reinstall
     remove_virtualmin_release
     apt_auth_dir='/etc/apt/auth.conf.d'
-    for repo in $repos; do
-      printf "deb [signed-by=/usr/share/keyrings/debian-virtualmin-$vm_version.gpg] https://${LOGIN}$upgrade_virtualmin_host/vm/${vm_version}/${repopath}apt ${repo} main\\n" >>/etc/apt/sources.list.d/virtualmin.list
-    done
-    if [ -n "$LOGIN" ]; then
-      printf "machine $upgrade_virtualmin_host login $SERIAL password $KEY\\n" >>"$apt_auth_dir/virtualmin.conf"
+    LOGINREAL=$LOGIN
+    if [ -x "$apt_auth_dir" ]; then
+      if [ -n "$LOGIN" ]; then
+        LOGINREAL=""
+        printf "machine $upgrade_virtualmin_host login $SERIAL password $KEY\\n" >>"$apt_auth_dir/virtualmin.conf"
+      fi
     fi
+    for repo in $repos; do
+      printf "deb [signed-by=/usr/share/keyrings/debian-virtualmin-$vm_version.gpg] https://${LOGINREAL}$upgrade_virtualmin_host/vm/${vm_version}/${repopath}apt ${repo} main\\n" >>/etc/apt/sources.list.d/virtualmin.list
+    done
 
     # Install our keys
     log_debug "Installing Webmin and Virtualmin package signing keys .."
-    download "https://$upgrade_virtualmin_host/lib/RPM-GPG-KEY-virtualmin-$vm_version"
-    download "https://$upgrade_virtualmin_host/lib/RPM-GPG-KEY-webmin"
+    download "https://$upgrade_virtualmin_host/lib/RPM-GPG-KEY-virtualmin-$vm_version" "Downloading Virtualmin $vm_version key"
     run_ok "gpg --import RPM-GPG-KEY-virtualmin-$vm_version && cat RPM-GPG-KEY-virtualmin-$vm_version | gpg --dearmor > /usr/share/keyrings/debian-virtualmin-$vm_version.gpg" "Installing Virtualmin $vm_version key"
+    download "https://$upgrade_virtualmin_host/lib/RPM-GPG-KEY-webmin" "Downloading Webmin key"
     run_ok "gpg --import RPM-GPG-KEY-webmin && cat RPM-GPG-KEY-webmin | gpg --dearmor > /usr/share/keyrings/debian-webmin.gpg" "Installing Webmin key"
 
     run_ok "apt-get update" "Downloading repository metadata"
